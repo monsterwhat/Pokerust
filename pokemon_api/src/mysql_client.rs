@@ -30,5 +30,6 @@ pub async fn get_pokemon_from_mysql() -> Result<Vec<Pokemon>, mysql_async::Error
         .collect();
 
     Ok(pokemon_list)
+
 }
 

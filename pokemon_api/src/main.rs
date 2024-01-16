@@ -32,6 +32,19 @@ async fn get_pokemon_list() -> Result<impl warp::Reply, warp::Rejection> {
 // Entry point of the application
 #[tokio::main]
 async fn main() {
+
+    // Assume you have a MySQL database running locally with user and password set appropriately.
+    let pool = mysql_async::Pool::new("mysql://pokemon:pokemon1234@localhost/pokemon");
+
+    match get_pokemon_from_mysql().await {
+        Ok(pokemon_list) => {
+            for pokemon in pokemon_list {
+                println!("{:?}", pokemon);
+            }
+        }
+        Err(e) => eprintln!("Error fetching Pokemon: {:?}", e),
+    }
+
     // Create a filter for the "/api" path that handles various HTTP methods
     let api_route = warp::path("api").and(
         // GET request handler

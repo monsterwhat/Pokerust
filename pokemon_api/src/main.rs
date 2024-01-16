@@ -31,75 +31,39 @@ async fn get_pokemon_list() -> Result<impl warp::Reply, warp::Rejection> {
     Ok(warp::reply::json(&pokemon_list))
 }
 
-
 // Entry point of the application
-
 #[tokio::main]
-
 async fn main() {
-
     // Create a filter for the "/api" path that handles various HTTP methods
-
     let api_route = warp::path("api").and(
-
         // GET request handler
-
         warp::get()
-
             .and(warp::path("pokemon"))
-
             .and_then(||
-
                 // Apply the get_pokemon_list function to handle the GET request
-
                 get_pokemon_list(),
-
             )
-
             // PUT request handler (dummy implementation for demonstration)
-
             .or(warp::put()
-
                 .and(warp::path("pokemon"))
-
                 .map(|| warp::reply::json(&ApiResponse {
-
                     message: String::from("Pokemon updated successfully!"),
-
                 })))
-
             // POST request handler (dummy implementation for demonstration)
-
             .or(warp::post()
-
                 .and(warp::path("pokemon"))
-
                 .map(|| warp::reply::json(&ApiResponse {
-
                     message: String::from("Pokemon created successfully!"),
-
                 })))
-
             // DELETE request handler (dummy implementation for demonstration)
-
             .or(warp::delete()
-
                 .and(warp::path("pokemon"))
-
                 .map(|| warp::reply::json(&ApiResponse {
-
                     message: String::from("Pokemon deleted successfully!"),
-
                 }))),
-
     );
 
-
-
     // Start the Warp server, binding it to the address 127.0.0.1:3030
-
     warp::serve(api_route).run(([127, 0, 0, 1], 3030)).await;
-
-
 
 }

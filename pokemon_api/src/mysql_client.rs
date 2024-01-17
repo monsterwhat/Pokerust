@@ -34,16 +34,11 @@ pub async fn get_pokemon_from_mysql() -> Result<Vec<Pokemon>, mysql_async::Error
 
 // Define the create_pokemon_in_mysql function, marked as public
 pub async fn create_pokemon_in_mysql(pokemon: Pokemon) -> Result<(), mysql_async::Error> {
-    
     let pool = Pool::new("mysql://pokemon:pokemon1234@localhost:3306/pokemon");
     let mut conn = pool.get_conn().await?;
 
-    let query = format!(
-        "INSERT INTO pokemon (name, evolutions) VALUES ('{}', '{}')",
-        pokemon.name, pokemon.evolutions
-    );
-
-    conn.query_drop(&query).await?;
+    let query = "INSERT INTO pokemon (name, evolutions) VALUES (?, ?)";
+    conn.exec_drop(query, (&pokemon.name, &pokemon.evolutions)).await?;
 
     Ok(())
 }

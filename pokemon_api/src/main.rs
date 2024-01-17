@@ -1,22 +1,15 @@
-use serde::{Deserialize, Serialize};
 use warp::{Filter, reject};
 mod mysql_client;
 use mysql_client::{*};
-use std::sync::Mutex;
+use std::sync::{Mutex, Arc};
 
 #[derive(Debug)]
 struct InvalidParameter;
 
 impl reject::Reject for InvalidParameter {}
 
-// Define a struct for the API response, marked for serialization with Serde
-#[derive(Serialize)]
-struct ApiResponse {
-    message: String,
-}
-
 lazy_static::lazy_static! {
-    static ref POKEMON_LIST: Mutex<Vec<Pokemon>> = Mutex::new(vec![]);
+    static ref POKEMON_LIST: Arc<Mutex<Vec<Pokemon>>> = Arc::new(Mutex::new(vec![]));
 }
 
 async fn load_list() {
@@ -24,7 +17,10 @@ async fn load_list() {
         Ok(pokemon_list) => {
             let mut list = POKEMON_LIST.lock().unwrap();
             list.extend(pokemon_list);
+            //Display a success message for debugging purposes
+            println!("Pokemon list loaded/reloaded successfully");
         }
+
         Err(e) => eprintln!("Error fetching Pokemon: {:?}", e),
     }
 }
@@ -32,30 +28,54 @@ async fn load_list() {
 async fn get_pokemon_list() -> Result<impl warp::Reply, warp::Rejection> {
     // Return the Pokemon list as a JSON response
     let pokemon_list = POKEMON_LIST.lock().unwrap();
+    println!("Pokemon list served successfully");
     Ok(warp::reply::json(&*pokemon_list))
+    
 }
 
 async fn get_pokemon_by_id(id: i32) -> Result<impl warp::Reply, warp::Rejection> {
     // Return the Pokemon by id as a JSON response
     let pokemon_list = POKEMON_LIST.lock().unwrap();
     let pokemon = pokemon_list.iter().find(|p| p.id == id);
+    println!("Pokemon: ");
+    println!("{}", pokemon.unwrap().id);
+    println!("{}", pokemon.unwrap().name.as_str());
+    println!("{}", pokemon.unwrap().evolutions.as_str());
+    println!("Served successfully");
+
     match pokemon {
-        Some(p) => Ok(warp::reply::json(&p)),
-        None => Err(warp::reject::custom(InvalidParameter)),
+        Some(p) => 
+        Ok(warp::reply::json(&p)),
+        None => 
+        Err(warp::reject::custom(InvalidParameter)),
     }
 }
 
-fn update_pokemon_by_id(id: i32, pokemon: Pokemon) -> Result<impl warp::Reply, warp::Rejection> {
-    // Update the Pokemon by id as a JSON response
-    let mut pokemon_list = POKEMON_LIST.lock().unwrap();
-    let found_pokemon = pokemon_list.iter_mut().find(|p| p.id == id);
+async fn update_pokemon_by_id(id: i32, pokemon: Pokemon) -> Result<impl warp::Reply, warp::Rejection> {
+    let found_pokemon = {
+        let mut pokemon_list = POKEMON_LIST.lock().unwrap();
+        pokemon_list.iter_mut().find(|p| p.id == id).cloned()
+    };
+
     match found_pokemon {
-        Some(p) => {
-            // Update the Pokemon's name and evolutions
-            p.name = pokemon.name.clone();
-            p.evolutions = pokemon.evolutions.clone();
-            //Should update the DB
-            update_pokemon_in_mysql(pokemon);
+        Some(mut p) => {
+
+            // Update the Pokemon in the list
+            p.name = pokemon.name;
+            p.evolutions = pokemon.evolutions;
+
+            //find the pokemon on the list and update it, make sure its using mutexlock
+            let mut pokemon_list = POKEMON_LIST.lock().unwrap();
+            let found_pokemon_index = pokemon_list.iter().position(|p| p.id == id).unwrap();
+            pokemon_list[found_pokemon_index] = p.clone();  
+            
+
+            // Update the DB
+            update_pokemon_in_mysql(p.clone()).await.unwrap();
+
+            //Print to console the change for debugging purposes
+            println!("Pokemon with id {} updated", id);
+            load_list().await;
 
             Ok(warp::reply::json(&p))
         },
@@ -63,18 +83,26 @@ fn update_pokemon_by_id(id: i32, pokemon: Pokemon) -> Result<impl warp::Reply, w
     }
 }
 
-fn delete_pokemon_by_id(id: i32) -> Result<impl warp::Reply, warp::Rejection> {
-    // Return the deleted Pokemon as a JSON response
-    let mut pokemon_list = POKEMON_LIST.lock().unwrap();
-    let pokemon = pokemon_list.iter().find(|p| p.id == id).cloned();
-    match pokemon {
-        Some(p) => {
-            pokemon_list.retain(|p| p.id != id); // Remove the Pokemon from the list
-            //Should delete from the DB
+async fn delete_pokemon_by_id(id: i32) -> Result<impl warp::Reply, warp::Rejection> {
+    let found_pokemon_index = {
+        let pokemon_list = POKEMON_LIST.lock().unwrap();
+        pokemon_list.iter().position(|p| p.id == id)
+    };
 
-            delete_pokemon_from_mysql(id);
+    match found_pokemon_index {
+        Some(index) => {
+            //Delete the Pokemon from DB
+            delete_pokemon_from_mysql(id).await.unwrap();
+            
+            {
+                let mut pokemon_list = POKEMON_LIST.lock().unwrap();
+                pokemon_list.remove(index);
+            }
+            //Print to console the change for debugging purposes
+            println!("Pokemon with id {} deleted", id); 
+            load_list().await;
 
-            Ok(warp::reply::json(&p))
+            Ok(warp::reply::json(&format!("Pokemon with id {} deleted", id)))
         },
         None => Err(warp::reject::custom(InvalidParameter)),
     }
@@ -82,54 +110,54 @@ fn delete_pokemon_by_id(id: i32) -> Result<impl warp::Reply, warp::Rejection> {
 
 async fn create_pokemon(id: i32, pokemon: Pokemon) -> Result<impl warp::Reply, warp::Rejection> {
     // Return the created Pokemon as a JSON response
-    let mut pokemon_list = POKEMON_LIST.lock().unwrap();
-    
-    // Update the ID of the provided Pokemon object
-    let new_pokemon = Pokemon {
-        id,
-        name: pokemon.name.clone(), 
-        evolutions: pokemon.evolutions.clone(),
+    let new_pokemon = {
+        let mut pokemon_list = POKEMON_LIST.lock().unwrap();
+        
+        // Update the ID of the provided Pokemon object
+        let new_pokemon = Pokemon {
+            id,
+            name: pokemon.name.clone(), 
+            evolutions: pokemon.evolutions.clone(),
+        };
+
+        pokemon_list.push(new_pokemon.clone()); // Add the Pokemon to the list
+        new_pokemon
     };
 
-    pokemon_list.push(new_pokemon.clone()); // Add the Pokemon to the list
-    // Should add to the DB
-    create_pokemon_in_mysql(pokemon).await.unwrap();
+    // Add to the DB
+    create_pokemon_in_mysql(new_pokemon.clone()).await.unwrap();
+    // Print in console the new Pokemon (for debugging purposes)
+    println!("New Pokemon: {:?}", new_pokemon);
+    load_list().await;
 
     Ok(warp::reply::json(&new_pokemon))
 }
 
-// Entry point of the application
+
 #[tokio::main]
 async fn main() {
-
     // Load the Pokemon list from the database
     load_list().await;
 
-    // Create a filter for the "/api" path that handles various HTTP methods
-let api_route = warp::path("api").and(
-    // GET request handler for specific ID
-    warp::get()
-        .and(warp::path!("pokemon" / i32))
-        .and_then(get_pokemon_by_id)
-    // GET request handler for all Pokemon
-    .or(warp::get()
-        .and(warp::path("pokemon"))
-        .and_then(get_pokemon_list))
-    // PUT, POST, DELETE request handlers under "/pokemon/{id}"
-    .or(warp::put()
-        .and(warp::path!("pokemon" / i32))
-        .and(warp::body::json())
-        .and_then(update_pokemon_by_id))
-    .or(warp::post()
-        .and(warp::path!("pokemon" / i32))
-        .and(warp::body::json())
-        .and_then(create_pokemon))
-    .or(warp::delete()
-        .and(warp::path!("pokemon" / i32))
-        .and_then(delete_pokemon_by_id)),
-);
+    // Filter for the "/api" path that handles various HTTP methods
+    let api_route = warp::path("api").and(
+            // GET request handler for specific ID
+            warp::get()
+            .and(warp::path!("pokemon" / i32))
+            .and_then(get_pokemon_by_id)
+            // GET request handler for all Pokemon
+            .or(warp::get().and(warp::path("pokemon")).and_then(get_pokemon_list))
+            // PUT, POST, DELETE, PATCH request handlers under "/pokemon/{id}"
+            .or(warp::put().and(warp::path!("pokemon" / i32)).and(warp::body::json()).and_then(update_pokemon_by_id))
+            .or(warp::post().and(warp::path!("pokemon" / i32)).and(warp::body::json()).and_then(create_pokemon))
+            .or(warp::delete().and(warp::path!("pokemon" / i32)).and_then(delete_pokemon_by_id))
+            .or(warp::patch().and(warp::path!("pokemon" / i32)).and(warp::body::json()).and_then(update_pokemon_by_id)),
+    );
 
-    // Start the Warp server, binding it to the address 127.0.0.1:3030
+    //Print a message saying the server is running
+    println!("Server is now running");
+
+    //Start the Warp server, binding it to the address 127.0.0.1:3030
     warp::serve(api_route).run(([127, 0, 0, 1], 3030)).await;
+    
 }
-

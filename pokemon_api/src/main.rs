@@ -15,19 +15,24 @@ lazy_static::lazy_static! {
 async fn load_list() {
     match get_pokemon_from_mysql().await {
         Ok(pokemon_list) => {
-            let mut list = POKEMON_LIST.lock().unwrap();
-            list.extend(pokemon_list);
-            //Display a success message for debugging purposes
-            println!("Pokemon list loaded/reloaded successfully");
+            match POKEMON_LIST.lock() {
+                Ok(mut list) => {
+                    list.extend(pokemon_list);
+                    //Display a success message for debugging purposes
+                    println!("Pokemon list loaded/reloaded successfully");
+                }
+                Err(_) => {
+                    eprintln!("Failed to lock POKEMON_LIST");
+                }
+            }
         }
-
         Err(e) => eprintln!("Error fetching Pokemon: {:?}", e),
     }
 }
 
 async fn get_pokemon_list() -> Result<impl warp::Reply, warp::Rejection> {
     // Return the Pokemon list as a JSON response
-    let pokemon_list = POKEMON_LIST.lock().unwrap();
+    let pokemon_list = POKEMON_LIST.lock().map_err(|_| warp::reject::custom(InvalidParameter))?;
     println!("Pokemon list served successfully");
     Ok(warp::reply::json(&*pokemon_list))
     
@@ -35,7 +40,7 @@ async fn get_pokemon_list() -> Result<impl warp::Reply, warp::Rejection> {
 
 async fn get_pokemon_by_id(id: i32) -> Result<impl warp::Reply, warp::Rejection> {
     // Return the Pokemon by id as a JSON response
-    let pokemon_list = POKEMON_LIST.lock().unwrap();
+    let pokemon_list = POKEMON_LIST.lock().map_err(|_| warp::reject::custom(InvalidParameter))?;
     let pokemon = pokemon_list.iter().find(|p| p.id == id);
 
     match pokemon {
@@ -48,7 +53,7 @@ async fn get_pokemon_by_id(id: i32) -> Result<impl warp::Reply, warp::Rejection>
 
 async fn update_pokemon_by_id(id: i32, pokemon: Pokemon) -> Result<impl warp::Reply, warp::Rejection> {
     let found_pokemon = {
-        let mut pokemon_list = POKEMON_LIST.lock().unwrap();
+        let mut pokemon_list = POKEMON_LIST.lock().map_err(|_| warp::reject::custom(InvalidParameter))?;
         pokemon_list.iter_mut().find(|p| p.id == id).cloned()
     };
 
@@ -60,12 +65,12 @@ async fn update_pokemon_by_id(id: i32, pokemon: Pokemon) -> Result<impl warp::Re
 
             {
                 //find the pokemon on the list and update it remember this is inside a mutexGuard
-                let mut pokemon_list = POKEMON_LIST.lock().unwrap();
+                let mut pokemon_list = POKEMON_LIST.lock().map_err(|_| warp::reject::custom(InvalidParameter))?;
                 let found_pokemon_index = pokemon_list.iter().position(|p| p.id == id).unwrap();
                 pokemon_list[found_pokemon_index] = p.clone(); 
             }
             // Update the DB
-            update_pokemon_in_mysql(p.clone()).await.unwrap();
+            update_pokemon_in_mysql(p.clone()).await.map_err(|_| warp::reject::custom(InvalidParameter))?;
 
             //Print to console the change for debugging purposes
             println!("Pokemon with name {} updated", p.name);
@@ -79,17 +84,17 @@ async fn update_pokemon_by_id(id: i32, pokemon: Pokemon) -> Result<impl warp::Re
 
 async fn delete_pokemon_by_id(id: i32) -> Result<impl warp::Reply, warp::Rejection> {
     let found_pokemon_index = {
-        let pokemon_list = POKEMON_LIST.lock().unwrap();
+        let pokemon_list = POKEMON_LIST.lock().map_err(|_| warp::reject::custom(InvalidParameter))?;
         pokemon_list.iter().position(|p| p.id == id)
     };
 
     match found_pokemon_index {
         Some(index) => {
             //Delete the Pokemon from DB
-            delete_pokemon_from_mysql(id).await.unwrap();
+            delete_pokemon_from_mysql(id).await.map_err(|_| warp::reject::custom(InvalidParameter))?;
             
             {
-                let mut pokemon_list = POKEMON_LIST.lock().unwrap();
+                let mut pokemon_list = POKEMON_LIST.lock().map_err(|_| warp::reject::custom(InvalidParameter))?;
                 pokemon_list.remove(index);
             }
             //Print to console the change for debugging purposes
@@ -105,7 +110,7 @@ async fn delete_pokemon_by_id(id: i32) -> Result<impl warp::Reply, warp::Rejecti
 async fn create_pokemon(id: i32, pokemon: Pokemon) -> Result<impl warp::Reply, warp::Rejection> {
     // Return the created Pokemon as a JSON response
     let new_pokemon = {
-        let mut pokemon_list = POKEMON_LIST.lock().unwrap();
+        let mut pokemon_list = POKEMON_LIST.lock().map_err(|_| warp::reject::custom(InvalidParameter))?;
         
         // Update the ID of the provided Pokemon object
         let new_pokemon = Pokemon {
@@ -119,7 +124,7 @@ async fn create_pokemon(id: i32, pokemon: Pokemon) -> Result<impl warp::Reply, w
     };
 
     // Add to the DB
-    create_pokemon_in_mysql(new_pokemon.clone()).await.unwrap();
+    create_pokemon_in_mysql(new_pokemon.clone()).await.map_err(|_| warp::reject::custom(InvalidParameter))?;
     // Print in console the new Pokemon (for debugging purposes)
     println!("New Pokemon: {:?}", new_pokemon);
     load_list().await;

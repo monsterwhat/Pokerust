@@ -1,6 +1,7 @@
 use mysql_async::prelude::Queryable;
 use mysql_async::{Pool, Row};
 use serde::{Deserialize, Serialize};
+use lazy_static::lazy_static;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Pokemon {
@@ -9,10 +10,13 @@ pub struct Pokemon {
     pub evolutions: String, // Assuming evolutions is stored as a string for simplicity
 }
 
-// Define the get_pokemon_from_mysql function, marked as public
+lazy_static! {
+    static ref POOL: Pool = Pool::new("mysql://pokemon:pokemon1234@localhost:3306/pokemon");
+}
+
+
 pub async fn get_pokemon_from_mysql() -> Result<Vec<Pokemon>, mysql_async::Error> {
-    // Assume you have a MySQL database running locally with user and password set appropriately.
-    let pool = Pool::new("mysql://pokemon:pokemon1234@localhost:3306/pokemon");
+    let pool = POOL.clone();
     let mut conn = pool.get_conn().await?;
 
     let query = "SELECT id, name, evolutions FROM pokemon";
@@ -32,9 +36,8 @@ pub async fn get_pokemon_from_mysql() -> Result<Vec<Pokemon>, mysql_async::Error
     Ok(pokemon_list)
 }
 
-// Define the create_pokemon_in_mysql function, marked as public
 pub async fn create_pokemon_in_mysql(pokemon: Pokemon) -> Result<(), mysql_async::Error> {
-    let pool = Pool::new("mysql://pokemon:pokemon1234@localhost:3306/pokemon");
+    let pool = POOL.clone();
     let mut conn = pool.get_conn().await?;
 
     let query = "INSERT INTO pokemon (name, evolutions) VALUES (?, ?)";
@@ -43,10 +46,9 @@ pub async fn create_pokemon_in_mysql(pokemon: Pokemon) -> Result<(), mysql_async
     Ok(())
 }
 
-// Define the update_pokemon_in_mysql function, marked as public
 pub async fn update_pokemon_in_mysql(pokemon: Pokemon) -> Result<(), mysql_async::Error> {
     
-    let pool = Pool::new("mysql://pokemon:pokemon1234@localhost:3306/pokemon");
+    let pool = POOL.clone();
     let mut conn = pool.get_conn().await?;
 
     let query = format!(
@@ -59,10 +61,9 @@ pub async fn update_pokemon_in_mysql(pokemon: Pokemon) -> Result<(), mysql_async
     Ok(())
 }
 
-// Define the delete_pokemon_from_mysql function, marked as public
 pub async fn delete_pokemon_from_mysql(id: i32) -> Result<(), mysql_async::Error> {
     
-    let pool = Pool::new("mysql://pokemon:pokemon1234@localhost:3306/pokemon");
+    let pool = POOL.clone();
     let mut conn = pool.get_conn().await?;
 
     let query = format!("DELETE FROM pokemon WHERE id = {}", id);

@@ -37,11 +37,6 @@ async fn get_pokemon_by_id(id: i32) -> Result<impl warp::Reply, warp::Rejection>
     // Return the Pokemon by id as a JSON response
     let pokemon_list = POKEMON_LIST.lock().unwrap();
     let pokemon = pokemon_list.iter().find(|p| p.id == id);
-    println!("Pokemon: ");
-    println!("{}", pokemon.unwrap().id);
-    println!("{}", pokemon.unwrap().name.as_str());
-    println!("{}", pokemon.unwrap().evolutions.as_str());
-    println!("Served successfully");
 
     match pokemon {
         Some(p) => 
@@ -59,22 +54,21 @@ async fn update_pokemon_by_id(id: i32, pokemon: Pokemon) -> Result<impl warp::Re
 
     match found_pokemon {
         Some(mut p) => {
-
-            // Update the Pokemon in the list
+            // Update the Pokemon object with the provided values
             p.name = pokemon.name;
             p.evolutions = pokemon.evolutions;
 
-            //find the pokemon on the list and update it, make sure its using mutexlock
-            let mut pokemon_list = POKEMON_LIST.lock().unwrap();
-            let found_pokemon_index = pokemon_list.iter().position(|p| p.id == id).unwrap();
-            pokemon_list[found_pokemon_index] = p.clone();  
-            
-
+            {
+                //find the pokemon on the list and update it remember this is inside a mutexGuard
+                let mut pokemon_list = POKEMON_LIST.lock().unwrap();
+                let found_pokemon_index = pokemon_list.iter().position(|p| p.id == id).unwrap();
+                pokemon_list[found_pokemon_index] = p.clone(); 
+            }
             // Update the DB
             update_pokemon_in_mysql(p.clone()).await.unwrap();
 
             //Print to console the change for debugging purposes
-            println!("Pokemon with id {} updated", id);
+            println!("Pokemon with name {} updated", p.name);
             load_list().await;
 
             Ok(warp::reply::json(&p))
@@ -145,9 +139,9 @@ async fn main() {
             warp::get()
             .and(warp::path!("pokemon" / i32))
             .and_then(get_pokemon_by_id)
-            // GET request handler for all Pokemon
+            // request handler for all Pokemon
             .or(warp::get().and(warp::path("pokemon")).and_then(get_pokemon_list))
-            // PUT, POST, DELETE, PATCH request handlers under "/pokemon/{id}"
+            // request handlers under "/pokemon/{id}"
             .or(warp::put().and(warp::path!("pokemon" / i32)).and(warp::body::json()).and_then(update_pokemon_by_id))
             .or(warp::post().and(warp::path!("pokemon" / i32)).and(warp::body::json()).and_then(create_pokemon))
             .or(warp::delete().and(warp::path!("pokemon" / i32)).and_then(delete_pokemon_by_id))

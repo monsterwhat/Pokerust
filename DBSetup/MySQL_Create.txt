@@ -1,0 +1,7 @@
+Create Database pokemon;
+use pokemon;
+CREATE TABLE IF NOT EXISTS `pokemon`.`pokemon` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(255) NOT NULL,
+  `evolutions` VARCHAR(255) NULL DEFAULT NULL,
+  PRIMARY KEY (`id`))

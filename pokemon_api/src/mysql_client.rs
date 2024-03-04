@@ -73,7 +73,15 @@ pub async fn delete_pokemon_from_mysql(id: i32) -> Result<(), mysql_async::Error
     Ok(())
 }
 
+pub async fn get_if_pokemon_exists_in_mysql(id: i32) -> Result<bool, mysql_async::Error> {
+    let pool = POOL.clone();
+    let mut conn = pool.get_conn().await?;
 
+    let query = format!("SELECT id FROM pokemon WHERE id = {}", id);
+    let rows: Vec<Row> = conn.query(query).await?;
+
+    Ok(!rows.is_empty())
+}
 
 
 
